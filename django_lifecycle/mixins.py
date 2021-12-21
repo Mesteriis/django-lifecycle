@@ -50,20 +50,23 @@ class LifecycleModelMixin(object):
     def _diff_with_initial(self) -> dict:
         initial = self._initial_state
         current = self._snapshot_state()
-        diffs = []
+        diffs = [
+            (k, (v, current[k]))
+            for k, v in initial.items()
+            if k in current and v != current[k]
+        ]
 
-        for k, v in initial.items():
-            if k in current and v != current[k]:
-                diffs.append((k, (v, current[k])))
 
         return dict(diffs)
 
     def _sanitize_field_name(self, field_name: str) -> str:
         try:
             internal_type = self._meta.get_field(field_name).get_internal_type()
-            if internal_type == "ForeignKey" or internal_type == "OneToOneField":
-                if not field_name.endswith("_id"):
-                    return field_name + "_id"
+            if internal_type in [
+                "ForeignKey",
+                "OneToOneField",
+            ] and not field_name.endswith("_id"):
+                return field_name + "_id"
         except FieldDoesNotExist:
             pass
 
@@ -100,10 +103,7 @@ class LifecycleModelMixin(object):
         changed = self._diff_with_initial.keys()
         field_name = self._sanitize_field_name(field_name)
 
-        if field_name in changed:
-            return True
-
-        return False
+        return field_name in changed
 
     def _clear_watched_fk_model_cache(self):
         """ """
@@ -209,10 +209,8 @@ class LifecycleModelMixin(object):
                         continue
                 elif when_any_field:
                     if not any(
-                        [
-                            self._check_callback_conditions(field_name, callback_specs)
-                            for field_name in when_any_field
-                        ]
+                        self._check_callback_conditions(field_name, callback_specs)
+                        for field_name in when_any_field
                     ):
                         continue
 
@@ -286,9 +284,7 @@ class LifecycleModelMixin(object):
         for name in dir(cls):
             attr = getattr(cls, name, None)
 
-            if attr and (
-                isinstance(attr, property) or isinstance(attr, cached_property)
-            ):
+            if attr and isinstance(attr, (property, cached_property)):
                 property_names.append(name)
 
         return property_names
@@ -325,7 +321,7 @@ class LifecycleModelMixin(object):
                 # Skip fields which don't provide a `get_internal_type` method, e.g. GenericForeignKey
                 continue
             else:
-                if internal_type == "ForeignKey" or internal_type == "OneToOneField":
+                if internal_type in ["ForeignKey", "OneToOneField"]:
                     names.append(f.name + "_id")
 
         return names
